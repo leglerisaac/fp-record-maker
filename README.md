@@ -21,6 +21,20 @@ npm start
 
 Open `http://localhost:3000` in your browser.
 
+## Docker
+### Build and run
+```bash
+docker build -t fp-record-maker .
+docker run --rm -p 3000:3000 fp-record-maker
+```
+
+### Docker Compose
+```bash
+docker compose up --build
+```
+
+Then open `http://localhost:3000`.
+
 ## Usage
 1. Click “Select MIDI (Side A)” and choose a `.mid` or `.midi` file.
 2. (Optional) Add a second MIDI for Side B.
