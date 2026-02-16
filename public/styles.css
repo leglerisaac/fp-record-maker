@@ -1,0 +1,247 @@
+:root {
+  --bg: #f5efe6;
+  --card: #fffaf3;
+  --ink: #1f1b16;
+  --accent: #d44f2a;
+  --muted: #6e6257;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Alegreya Sans", "Trebuchet MS", sans-serif;
+  background: radial-gradient(1200px 800px at 10% 10%, #fff, var(--bg));
+  color: var(--ink);
+}
+
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 40px 16px;
+}
+
+.card {
+  width: min(640px, 95vw);
+  padding: 28px 26px;
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+
+.sub {
+  margin: 0 0 20px;
+  color: var(--muted);
+}
+
+form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.file-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.file-wrap {
+  display: inline-flex;
+}
+
+.file {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px dashed var(--muted);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.file-clear {
+  display: none;
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--ink);
+  opacity: 0.7;
+}
+
+.file-clear.visible {
+  display: inline;
+}
+
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.status {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f1e4d6;
+  color: var(--muted);
+}
+
+.status.working {
+  background: #fff1d8;
+  color: #7b4a00;
+}
+
+.status.done {
+  background: #e7f7e7;
+  color: #2c6b2c;
+}
+
+.status.error {
+  background: #fde8e8;
+  color: #8a1f1f;
+}
+
+.progress {
+  margin-top: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #efe2d5;
+  overflow: hidden;
+  display: none;
+  position: relative;
+}
+
+.progress.active {
+  display: block;
+}
+
+.progress .bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #d44f2a, #f08a3a);
+  border-radius: 999px;
+  transition: width 120ms ease;
+}
+
+.progress .label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: #5b3a1f;
+}
+
+.details {
+  margin-top: 18px;
+  color: var(--muted);
+}
+
+.details summary {
+  cursor: pointer;
+}
+
+.details ul {
+  margin: 10px 0 0 18px;
+  padding: 0;
+}
+
+.activity {
+  margin-top: 14px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.activity.active {
+  display: flex;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid #f1dfcf;
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+.activity-text {
+  font-size: 14px;
+}
+
+.steps {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: none;
+  color: var(--muted);
+}
+
+.steps.active {
+  display: grid;
+  gap: 6px;
+}
+
+.steps li {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f6e8db;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  font-size: 13px;
+}
+
+.steps li.active {
+  background: #ffe7d9;
+  color: #7b3b22;
+  border-color: rgba(212, 79, 42, 0.2);
+}
+
+.steps li.done {
+  background: #e9f5e7;
+  color: #2c6b2c;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 600px) {
+  form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .file-row {
+    flex-direction: column;
+  }
+
+  button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "fisher-price-midi-to-stl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@jscad/io": "^2.4.0",
+    "@jscad/modeling": "^2.6.0",
+    "@tonejs/midi": "^2.0.28",
+    "express": "^4.19.2",
+    "multer": "^2.0.0"
+  }
+}

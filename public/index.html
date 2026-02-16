@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fisher-Price MIDI to STL</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="card">
+        <h1>Fisher-Price MIDI to STL</h1>
+        <p class="sub">Upload a MIDI file and download a printable record.</p>
+
+        <form id="uploadForm">
+          <div class="file-row">
+            <div class="file-wrap">
+              <label class="file">
+                <input type="file" name="midi" accept=".mid,.midi" required />
+                <span id="fileLabel">Select MIDI (Side A)</span>
+                <span id="clearA" class="file-clear" role="button" aria-label="Clear Side A" title="Clear Side A">×</span>
+              </label>
+            </div>
+            <div class="file-wrap">
+              <label class="file">
+                <input type="file" name="midiB" accept=".mid,.midi" />
+                <span id="fileLabelB">Select MIDI (Side B, optional)</span>
+                <span id="clearB" class="file-clear" role="button" aria-label="Clear Side B" title="Clear Side B">×</span>
+              </label>
+            </div>
+          </div>
+          <button type="submit">Convert to STL</button>
+        </form>
+
+        <div id="status" class="status">Ready.</div>
+        <div id="progress" class="progress" aria-hidden="true">
+          <div class="bar" style="width: 0%"></div>
+          <div class="label">0%</div>
+        </div>
+        <div id="activity" class="activity" aria-hidden="true">
+          <div class="spinner" aria-hidden="true"></div>
+          <div>
+            <div id="activityText" class="activity-text">Working...</div>
+          </div>
+        </div>
+
+        <ul id="steps" class="steps" aria-hidden="true">
+          <li data-stage="parse">Parsing MIDI</li>
+          <li data-stage="map">Mapping notes</li>
+          <li data-stage="build">Building disc geometry</li>
+          <li data-stage="serialize">Serializing STL</li>
+          <li data-stage="send">Sending download</li>
+        </ul>
+
+        <details class="details">
+          <summary>Settings & Rules</summary>
+          <ul>
+            <li>Target rotation: 36 seconds per revolution.</li>
+            <li>Tempo adjust: ±5% if possible; otherwise time-compress.</li>
+            <li>Max end-gap: 3.6 seconds.</li>
+            <li>Out-of-range notes: octave fold + nearest allowed note.</li>
+            <li>Collisions are allowed.</li>
+            <li>Disc size: 121.16 mm diameter, 3.0 mm thickness.</li>
+            <li>Side labels are taken from the MIDI file names.</li>
+          </ul>
+        </details>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
