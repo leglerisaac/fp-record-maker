@@ -1,8 +1,16 @@
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const { execFile } = require("child_process");
 const { parentPort, workerData } = require("worker_threads");
-const { Midi } = require("@tonejs/midi");
+const ffmpegPath = require("ffmpeg-static");
+const wav = require("node-wav");
+const pitchfinder = require("pitchfinder");
+const fft = require("fft-js").fft;
+const fftUtil = require("fft-js").util;
+
 const modeling = require("@jscad/modeling");
 const { serialize } = require("@jscad/io").stlSerializer;
-
 const { cylinder, cuboid } = modeling.primitives;
 const { subtract, union } = modeling.booleans;
 const { translate, rotateZ, rotateX, scale } = modeling.transforms;
@@ -74,8 +82,8 @@ const TIMING = {
 };
 
 const NOTE_TO_MIDI = {
-  "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5,
-  "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11
+  C: 0, "C#": 1, D: 2, "D#": 3, E: 4, F: 5,
+  "F#": 6, G: 7, "G#": 8, A: 9, "A#": 10, B: 11
 };
 
 function postProgress(value) {
@@ -86,80 +94,11 @@ function postStage(value) {
   parentPort.postMessage({ type: "stage", value });
 }
 
-function postEta(value) {
-  parentPort.postMessage({ type: "eta", value });
-}
-
 function sanitizeLabel(text) {
   if (!text) return "";
   return String(text);
 }
 
-function buildCurvedLabel(text, side, hStock) {
-  const label = sanitizeLabel(text);
-  if (!label) return null;
-
-  const fontHeight = 4.6;
-  const strokeSize = 0.55;
-  const arcRadius = Math.min(15.5, GEOM.rInset - 8.0);
-
-  const glyphs = [];
-  for (const ch of label) {
-    if (ch === " ") {
-      glyphs.push({ char: ch, width: fontHeight * 0.6, geom: null });
-      continue;
-    }
-    const lines = vectorText({ xOffset: 0, yOffset: 0, height: fontHeight }, ch);
-    const strokes = lines
-      .filter((line) => line.length >= 2)
-      .map((line) => {
-        const p = path2.fromPoints({}, line);
-        return extrudeRectangular({ height: 0.6, size: strokeSize }, p);
-      });
-    if (!strokes.length) {
-      glyphs.push({ char: ch, width: fontHeight * 0.6, geom: null });
-      continue;
-    }
-    let g = union(...strokes);
-    const bbox = measureBoundingBox(g);
-    const width = bbox[1][0] - bbox[0][0];
-    const height = bbox[1][1] - bbox[0][1];
-    g = translate([-bbox[0][0] - width / 2, -bbox[0][1] - height / 2, 0], g);
-    glyphs.push({ char: ch, width, geom: g });
-  }
-
-  const spacing = 1.0;
-  const totalWidth = glyphs.reduce((sum, g) => sum + g.width + spacing, 0);
-  const maxArc = Math.PI * 1.4;
-  const scaleFactor = Math.min(1, (maxArc * arcRadius) / totalWidth);
-
-  let cursor = -((totalWidth * scaleFactor) / 2);
-  const parts = [];
-  for (const g of glyphs) {
-    const advance = (g.width + spacing) * scaleFactor;
-    if (g.geom) {
-      let glyph = scale([scaleFactor, scaleFactor, 1], g.geom);
-      const angle = -((cursor + advance / 2) / arcRadius);
-      glyph = translate([0, arcRadius, 0], glyph);
-      glyph = rotateZ(angle, glyph);
-      glyph = rotateZ(-Math.PI / 2, glyph);
-      parts.push(glyph);
-    }
-    cursor += advance;
-  }
-
-  if (!parts.length) return null;
-  let text3d = union(...parts);
-
-  if (side === "B") {
-    text3d = rotateZ(Math.PI, text3d);
-    text3d = rotateX(Math.PI, text3d);
-    return translate([0, 0, 0], text3d);
-  }
-
-  text3d = rotateZ(Math.PI, text3d);
-  return translate([0, 0, hStock - 0.1], text3d);
-}
 function noteNameToMidi(name) {
   const match = /^([A-G]#?)(-?\d+)$/.exec(name);
   if (!match) return null;
@@ -243,29 +182,6 @@ function computeTimingScale(duration) {
   return { scale, gap: Math.max(0, gap) };
 }
 
-function buildNoteEvents(midi) {
-  const notes = [];
-  for (const track of midi.tracks) {
-    for (const note of track.notes) {
-      if (note.channel === 9) continue;
-      notes.push({ midi: note.midi, time: note.time, duration: note.duration });
-    }
-  }
-  return notes;
-}
-
-function computeStats(rawNotes, transpose) {
-  if (!rawNotes.length) return { total: 0, outOfRange: 0, duration: 0 };
-  const duration = rawNotes.reduce((m, n) => Math.max(m, n.time + n.duration), 0);
-  let outOfRange = 0;
-  for (const n of rawNotes) {
-    const pitchClass = ((n.midi + transpose) % 12 + 12) % 12;
-    const hasSameClass = ALLOWED_MIDI.some((m) => m % 12 === pitchClass);
-    if (!hasSameClass) outOfRange += 1;
-  }
-  return { total: rawNotes.length, outOfRange, duration };
-}
-
 function getGeom(includeBottomGrooves) {
   return {
     ...GEOM,
@@ -306,18 +222,73 @@ function createBlankDisc(includeBottomGrooves) {
 
   const cutouts = [topCut, bottomCut, centerHole, ...driveHoles, ...groovesTop];
 
-  if (includeBottomGrooves) {
-    const groovesBottom = TRACK_INNER_RADII.map((inner) => {
-      const ring = subtract(
-        cylinder({ height: g.hGroove + g.overlap, radius: inner + 2, segments: g.segments, center: [0, 0, 0] }),
-        cylinder({ height: g.hGroove + g.overlap, radius: inner, segments: g.segments, center: [0, 0, 0] })
-      );
-      return translate([0, 0, g.hGroove / 2], ring);
-    });
-    cutouts.push(...groovesBottom);
+  return subtract(stock, union(...cutouts));
+}
+
+function buildCurvedLabel(text, side, hStock) {
+  const label = sanitizeLabel(text);
+  if (!label) return null;
+
+  const fontHeight = 4.6;
+  const strokeSize = 0.55;
+  const arcRadius = Math.min(15.5, GEOM.rInset - 8.0);
+
+  const glyphs = [];
+  for (const ch of label) {
+    if (ch === " ") {
+      glyphs.push({ char: ch, width: fontHeight * 0.6, geom: null });
+      continue;
+    }
+    const lines = vectorText({ xOffset: 0, yOffset: 0, height: fontHeight }, ch);
+    const strokes = lines
+      .filter((line) => line.length >= 2)
+      .map((line) => {
+        const p = path2.fromPoints({}, line);
+        return extrudeRectangular({ height: 0.6, size: strokeSize }, p);
+      });
+    if (!strokes.length) {
+      glyphs.push({ char: ch, width: fontHeight * 0.6, geom: null });
+      continue;
+    }
+    let g = union(...strokes);
+    const bbox = measureBoundingBox(g);
+    const width = bbox[1][0] - bbox[0][0];
+    const height = bbox[1][1] - bbox[0][1];
+    g = translate([-bbox[0][0] - width / 2, -bbox[0][1] - height / 2, 0], g);
+    glyphs.push({ char: ch, width, geom: g });
   }
 
-  return subtract(stock, union(...cutouts));
+  const spacing = 1.0;
+  const totalWidth = glyphs.reduce((sum, g) => sum + g.width + spacing, 0);
+  const maxArc = Math.PI * 1.4;
+  const scaleFactor = Math.min(1, (maxArc * arcRadius) / totalWidth);
+
+  let cursor = -((totalWidth * scaleFactor) / 2);
+  const parts = [];
+  for (const g of glyphs) {
+    const advance = (g.width + spacing) * scaleFactor;
+    if (g.geom) {
+      let glyph = scale([scaleFactor, scaleFactor, 1], g.geom);
+      const angle = -((cursor + advance / 2) / arcRadius);
+      glyph = translate([0, arcRadius, 0], glyph);
+      glyph = rotateZ(angle, glyph);
+      glyph = rotateZ(-Math.PI / 2, glyph);
+      parts.push(glyph);
+    }
+    cursor += advance;
+  }
+
+  if (!parts.length) return null;
+  let text3d = union(...parts);
+
+  if (side === "B") {
+    text3d = rotateZ(Math.PI, text3d);
+    text3d = rotateX(Math.PI, text3d);
+    return translate([0, 0, 0], text3d);
+  }
+
+  text3d = rotateZ(Math.PI, text3d);
+  return translate([0, 0, hStock - 0.1], text3d);
 }
 
 function createPin(inner, outer, angleRad, side, includeBottomGrooves) {
@@ -339,20 +310,16 @@ function createPin(inner, outer, angleRad, side, includeBottomGrooves) {
 }
 
 async function buildRecordAsync(notesA, notesB, labelA, labelB) {
-  const hasBottom = notesB.length > 0;
+  const hasBottom = false;
   const g = getGeom(hasBottom);
   const blank = createBlankDisc(hasBottom);
   if (!notesA.length && !notesB.length) return blank;
 
   const pinsA = notesA.map((n) => createPin(n.inner, n.outer, n.angleRad, "A", hasBottom));
-  const pinsB = notesB.map((n) => createPin(n.inner, n.outer, n.angleRad, "B", hasBottom));
   const labelGeomA = buildCurvedLabel(labelA, "A", g.hStock);
-  const labelGeomB = notesB.length ? buildCurvedLabel(labelB, "B", g.hStock) : null;
   const pins = [
     ...pinsA,
-    ...pinsB,
-    ...(labelGeomA ? [labelGeomA] : []),
-    ...(labelGeomB ? [labelGeomB] : [])
+    ...(labelGeomA ? [labelGeomA] : [])
   ];
   const batchSize = Math.max(50, Math.floor(pins.length / 6));
 
@@ -369,78 +336,167 @@ async function buildRecordAsync(notesA, notesB, labelA, labelB) {
   return current;
 }
 
+function hzToMidi(freq) {
+  return Math.round(69 + 12 * Math.log2(freq / 440));
+}
+
+function limitDensity(events, maxNotesPerSlice, sliceMs) {
+  const buckets = new Map();
+  const sliceSec = sliceMs / 1000;
+  for (const e of events) {
+    const idx = Math.floor(e.time / sliceSec);
+    if (!buckets.has(idx)) buckets.set(idx, []);
+    buckets.get(idx).push(e);
+  }
+
+  const out = [];
+  for (const list of buckets.values()) {
+    list.sort((a, b) => (b.amp || 0) - (a.amp || 0));
+    out.push(...list.slice(0, maxNotesPerSlice));
+  }
+  return out;
+}
+
+async function decodeAudioToMonoWav(buffer, startSeconds, durationSeconds) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fp-audio-"));
+  const inputPath = path.join(tmpDir, "input");
+  const outputPath = path.join(tmpDir, "output.wav");
+  fs.writeFileSync(inputPath, buffer);
+
+  const args = [
+    "-y",
+    "-i", inputPath,
+    "-ac", "1",
+    "-ar", "44100",
+    "-vn",
+    "-f", "wav",
+    outputPath
+  ];
+
+  await new Promise((resolve, reject) => {
+    execFile(ffmpegPath, args, (err) => {
+      if (err) return reject(err);
+      return resolve();
+    });
+  });
+
+  const wavBuffer = fs.readFileSync(outputPath);
+  const decoded = wav.decode(wavBuffer);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  const channel = decoded.channelData[0];
+  const sampleRate = decoded.sampleRate;
+  const start = Math.max(0, Math.floor(startSeconds * sampleRate));
+  const length = Math.min(channel.length - start, Math.floor(durationSeconds * sampleRate));
+  const slice = channel.slice(start, start + length);
+  return { samples: slice, sampleRate };
+}
+
+async function extractMonophonic(samples, sampleRate) {
+  const detectorA = pitchfinder.YIN({ sampleRate, threshold: 0.05 });
+  const detectorB = pitchfinder.AMDF({ sampleRate });
+  const frameSize = 1024;
+  const hop = 256;
+  const events = [];
+
+  for (let i = 0; i + frameSize < samples.length; i += hop) {
+    const frame = samples.slice(i, i + frameSize);
+    let freq = detectorA(frame);
+    if (!freq) freq = detectorB(frame);
+    if (freq && freq > 60 && freq < 1800) {
+      events.push({
+        time: i / sampleRate,
+        midi: hzToMidi(freq),
+        amp: 1
+      });
+    }
+    if (i % (hop * 200) === 0) {
+      postProgress(40 + Math.floor((i / samples.length) * 20));
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  return limitDensity(events, 2, 80);
+}
+
+async function extractPolyphonic(samples, sampleRate) {
+  const frameSize = 1024;
+  const hop = 256;
+  const events = [];
+  const maxPeaks = 5;
+
+  for (let i = 0; i + frameSize < samples.length; i += hop) {
+    const frame = samples.slice(i, i + frameSize);
+    const phasors = fft(frame);
+    const mags = fftUtil.fftMag(phasors);
+
+    const peaks = [];
+    for (let bin = 5; bin < mags.length / 2; bin++) {
+      const mag = mags[bin];
+      if (!mag) continue;
+      if (peaks.length < maxPeaks) {
+        peaks.push({ bin, mag });
+      } else {
+        peaks.sort((a, b) => b.mag - a.mag);
+        if (mag > peaks[peaks.length - 1].mag) {
+          peaks[peaks.length - 1] = { bin, mag };
+        }
+      }
+    }
+
+    peaks.sort((a, b) => b.mag - a.mag);
+    for (const p of peaks) {
+      const freq = (p.bin * sampleRate) / frameSize;
+      if (freq < 50 || freq > 2000) continue;
+      events.push({ time: i / sampleRate, midi: hzToMidi(freq), amp: p.mag });
+    }
+
+    if (i % (hop * 200) === 0) {
+      postProgress(40 + Math.floor((i / samples.length) * 20));
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+
+  return limitDensity(events, 5, 80);
+}
+
 async function run() {
   try {
-    postStage("parse");
-    postProgress(5);
-    const midi = new Midi(workerData.midiBufferA);
-    const midiB = workerData.midiBufferB ? new Midi(workerData.midiBufferB) : null;
-    postProgress(12);
+    const { audioBuffer, mode, startSeconds, durationSeconds, labelA } = workerData;
 
-    const rawNotes = buildNoteEvents(midi);
-    const rawNotesB = midiB ? buildNoteEvents(midiB) : [];
-    if (!rawNotes.length) {
-      parentPort.postMessage({ type: "error", error: "No notes found in MIDI." });
-      return;
-    }
+    postStage("parse");
+    postProgress(8);
+
+    const duration = Math.max(6, Math.min(60, Number(durationSeconds) || 36));
+    const { samples, sampleRate } = await decodeAudioToMonoWav(audioBuffer, startSeconds, duration);
 
     postStage("map");
-    postProgress(20);
-    const duration = rawNotes.reduce((m, n) => Math.max(m, n.time + n.duration), 0);
-    const { scale, gap } = computeTimingScale(duration);
-    postProgress(28);
+    postProgress(35);
 
-    const transpose = computeBestTranspose(rawNotes);
-    postProgress(36);
+    let events = [];
+    if (mode === "poly") {
+      events = await extractPolyphonic(samples, sampleRate);
+    } else {
+      events = await extractMonophonic(samples, sampleRate);
+    }
+
+    const sourceDuration = samples.length / sampleRate;
+    const { scale, gap } = computeTimingScale(sourceDuration);
+    const transpose = computeBestTranspose(events);
 
     const target = TIMING.targetSeconds;
-    const mappedNotes = [];
-    const totalNotes = rawNotes.length;
-    const est = Math.min(120, 6 + totalNotes * 0.004 + ((workerData.midiBufferA?.length || 0) / 1024) * 0.003);
-    postEta(est);
-    postProgress(44);
-
-    const step = Math.max(1, Math.floor(totalNotes / 6));
-    for (let i = 0; i < totalNotes; i++) {
-      const n = rawNotes[i];
-      const scaledTime = n.time * scale;
-      if (scaledTime >= 0 && scaledTime <= target) {
-        const mapped = mapMidiToAllowed(n.midi + transpose);
-        const [inner, outer] = NOTE_PIN_KEY[mapped.idx];
-        const angleRad = (scaledTime / target) * Math.PI * 2;
-        mappedNotes.push({ inner, outer, angleRad });
-      }
-      if (i % step === 0) {
-        const pct = 46 + Math.floor((i / totalNotes) * 18);
-        postProgress(pct);
-        await new Promise((resolve) => setImmediate(resolve));
-      }
-    }
-
-    let mappedNotesB = [];
-    if (rawNotesB.length) {
-      const totalNotesB = rawNotesB.length;
-      const stepB = Math.max(1, Math.floor(totalNotesB / 6));
-      for (let i = 0; i < totalNotesB; i++) {
-        const n = rawNotesB[i];
-        const scaledTime = n.time * scale;
-        if (scaledTime >= 0 && scaledTime <= target) {
-          const mapped = mapMidiToAllowed(n.midi + transpose);
-          const [inner, outer] = NOTE_PIN_KEY[mapped.idx];
-          const angleRad = (scaledTime / target) * Math.PI * 2;
-          mappedNotesB.push({ inner, outer, angleRad });
-        }
-        if (i % stepB === 0) {
-          const pct = 60 + Math.floor((i / totalNotesB) * 10);
-          postProgress(pct);
-          await new Promise((resolve) => setImmediate(resolve));
-        }
-      }
-    }
+    const mapped = events.map((e) => {
+      const scaledTime = e.time * scale;
+      if (scaledTime < 0 || scaledTime > target) return null;
+      const mappedNote = mapMidiToAllowed(e.midi + transpose);
+      const [inner, outer] = NOTE_PIN_KEY[mappedNote.idx];
+      const angleRad = (scaledTime / target) * Math.PI * 2;
+      return { inner, outer, angleRad };
+    }).filter(Boolean);
 
     postStage("build");
     postProgress(70);
-    const geom = await buildRecordAsync(mappedNotes, mappedNotesB, workerData.labelA, workerData.labelB);
+    const geom = await buildRecordAsync(mapped, [], labelA, null);
 
     postStage("serialize");
     postProgress(90);
@@ -453,19 +509,18 @@ async function run() {
 
     postStage("send");
     postProgress(98);
-    const stats = computeStats(rawNotes, transpose);
     parentPort.postMessage({
       type: "result",
       buffer,
       scale,
       transpose,
       gap,
-      totalNotes: stats.total,
-      outOfRangePct: stats.total ? Math.round((stats.outOfRange / stats.total) * 100) : 0,
-      sourceDuration: Math.round(stats.duration)
+      totalNotes: mapped.length,
+      outOfRangePct: 0,
+      sourceDuration: Math.round(sourceDuration)
     });
   } catch (err) {
-    parentPort.postMessage({ type: "error", error: "Failed to convert MIDI." });
+    parentPort.postMessage({ type: "error", error: "Failed to convert audio." });
   }
 }
 

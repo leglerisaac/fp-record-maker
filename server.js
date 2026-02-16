@@ -39,14 +39,7 @@ app.get("/api/progress/:jobId", (req, res) => {
   });
 });
 
-app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "midiB", maxCount: 1 }]), (req, res) => {
-  const fileA = req.files?.midi?.[0];
-  const fileB = req.files?.midiB?.[0];
-  if (!fileA) {
-    return res.status(400).json({ error: "No MIDI file uploaded." });
-  }
-
-  const jobId = req.body.jobId;
+function registerWorkerHandlers({ worker, res, fileA, fileB, jobId }) {
   const job = jobId ? jobs.get(jobId) : null;
   const updateProgress = (pct) => {
     if (!job) return;
@@ -64,17 +57,6 @@ app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "
     for (const send of job.clients) send("eta", eta);
   };
 
-  updateProgress(3);
-
-  const worker = new Worker(path.join(__dirname, "worker.js"), {
-    workerData: {
-      midiBufferA: fileA.buffer,
-      midiBufferB: fileB ? fileB.buffer : null,
-      labelA: path.parse(fileA.originalname).name,
-      labelB: fileB ? path.parse(fileB.originalname).name : null
-    }
-  });
-
   let responded = false;
 
   worker.on("message", (msg) => {
@@ -85,17 +67,24 @@ app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "
     if (msg.type === "result" && !responded) {
       responded = true;
       const buffer = Buffer.from(msg.buffer);
+      const safeName = (name) => name.replace(/[\\/:%*?"<>|]/g, "").trim();
+      const nameA = safeName(path.parse(fileA.originalname).name || "record");
+      const nameB = fileB ? safeName(path.parse(fileB.originalname).name || "side-b") : "";
+      const outName = fileB ? `${nameA} - ${nameB}` : nameA;
+
       res.setHeader("Content-Type", "application/sla");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${path.parse(fileA.originalname).name || "record"}.stl"`
+        `attachment; filename="${outName}.stl"`
       );
+      res.setHeader("X-Output-Name", outName);
       res.setHeader("X-Scale-Factor", msg.scale.toFixed(4));
       res.setHeader("X-Transpose-Semites", msg.transpose.toString());
       res.setHeader("X-Gap-Seconds", msg.gap.toFixed(3));
-      res.setHeader("X-Total-Notes", msg.totalNotes.toString());
-      res.setHeader("X-Out-Of-Range", msg.outOfRangePct.toString());
-      res.setHeader("X-Source-Duration", msg.sourceDuration.toString());
+      if (msg.totalNotes != null) res.setHeader("X-Total-Notes", msg.totalNotes.toString());
+      if (msg.outOfRangePct != null) res.setHeader("X-Out-Of-Range", msg.outOfRangePct.toString());
+      if (msg.sourceDuration != null) res.setHeader("X-Source-Duration", msg.sourceDuration.toString());
+
       updateProgress(100);
       res.send(buffer);
       if (jobId) jobs.delete(jobId);
@@ -104,7 +93,7 @@ app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "
 
     if (msg.type === "error" && !responded) {
       responded = true;
-      res.status(500).json({ error: msg.error || "Failed to convert MIDI." });
+      res.status(500).json({ error: msg.error || "Failed to convert." });
       if (jobId) jobs.delete(jobId);
       worker.terminate();
     }
@@ -114,10 +103,54 @@ app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "
     console.error(err);
     if (!responded) {
       responded = true;
-      res.status(500).json({ error: "Worker failed to convert MIDI." });
+      res.status(500).json({ error: "Worker failed to convert." });
       if (jobId) jobs.delete(jobId);
     }
   });
+}
+
+app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "midiB", maxCount: 1 }]), (req, res) => {
+  const fileA = req.files?.midi?.[0];
+  const fileB = req.files?.midiB?.[0];
+  if (!fileA) {
+    return res.status(400).json({ error: "No MIDI file uploaded." });
+  }
+
+  const jobId = req.body.jobId;
+
+  const worker = new Worker(path.join(__dirname, "worker.js"), {
+    workerData: {
+      midiBufferA: fileA.buffer,
+      midiBufferB: fileB ? fileB.buffer : null,
+      labelA: path.parse(fileA.originalname).name,
+      labelB: fileB ? path.parse(fileB.originalname).name : null
+    }
+  });
+
+  registerWorkerHandlers({ worker, res, fileA, fileB, jobId });
+});
+
+app.post("/api/convert-audio", upload.single("audio"), (req, res) => {
+  const fileA = req.file;
+  if (!fileA) {
+    return res.status(400).json({ error: "No audio file uploaded." });
+  }
+  const jobId = req.body.jobId;
+  const mode = req.body.mode === "poly" ? "poly" : "mono";
+  const startSeconds = Math.max(0, Number(req.body.startSeconds || 0));
+  const durationSeconds = Math.max(6, Math.min(60, Number(req.body.durationSeconds || 36)));
+
+  const worker = new Worker(path.join(__dirname, "audio_worker.js"), {
+    workerData: {
+      audioBuffer: fileA.buffer,
+      labelA: path.parse(fileA.originalname).name,
+      mode,
+      startSeconds,
+      durationSeconds
+    }
+  });
+
+  registerWorkerHandlers({ worker, res, fileA, fileB: null, jobId });
 });
 
 app.listen(PORT, "127.0.0.1", () => {

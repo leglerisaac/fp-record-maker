@@ -11,6 +11,10 @@
     "@jscad/modeling": "^2.6.0",
     "@tonejs/midi": "^2.0.28",
     "express": "^4.19.2",
-    "multer": "^2.0.0"
+    "ffmpeg-static": "^5.2.0",
+    "fft-js": "^0.0.12",
+    "multer": "^2.0.0",
+    "node-wav": "^0.0.2",
+    "pitchfinder": "^2.3.2"
   }
 }

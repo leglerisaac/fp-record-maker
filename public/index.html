@@ -61,9 +61,52 @@
             <li>Max end-gap: 3.6 seconds.</li>
             <li>Out-of-range notes: octave fold + nearest allowed note.</li>
             <li>Collisions are allowed.</li>
-            <li>Disc size: 121.16 mm diameter, 3.0 mm thickness.</li>
+            <li>Disc size: 121.16 mm diameter.</li>
             <li>Side labels are taken from the MIDI file names.</li>
           </ul>
+        </details>
+
+        <details class="details experimental">
+          <summary>Experimental Features</summary>
+          <form id="audioForm" class="exp-panel">
+            <div class="file-row">
+              <div class="file-wrap">
+                <label class="file">
+                  <input type="file" name="audio" accept=".mp3,.mp4,.wav,.m4a" />
+                  <span id="audioLabel">Select Audio (MP3/MP4/WAV)</span>
+                  <span id="clearAudio" class="file-clear" role="button" aria-label="Clear Audio" title="Clear Audio">×</span>
+                </label>
+              </div>
+            </div>
+            <div class="audio-controls">
+              <label>
+                Mode
+                <select id="audioMode">
+                  <option value="mono">Monophonic (faster)</option>
+                  <option value="poly">Polyphonic (slower)</option>
+                </select>
+              </label>
+              <label>
+                Start (seconds)
+                <input id="audioStart" type="number" min="0" step="0.1" value="0" />
+              </label>
+              <label>
+                Duration (seconds)
+                <input id="audioDuration" type="number" min="6" max="60" step="0.5" value="36" />
+              </label>
+              <button type="button" id="audioPlay">Play Selection</button>
+              <button type="submit">Convert Audio to STL</button>
+            </div>
+            <div class="wave-wrap" aria-hidden="true">
+              <canvas id="waveCanvas" width="640" height="120"></canvas>
+              <div id="waveSelection" class="wave-selection">
+                <span class="handle left" aria-hidden="true"></span>
+                <span class="handle right" aria-hidden="true"></span>
+              </div>
+              <div id="playhead" class="playhead" aria-hidden="true"></div>
+            </div>
+            <p class="micro warning">Experimental: audio transcription can be inaccurate. Results may be sparse, noisy, or unusable.</p>
+          </form>
         </details>
       </section>
     </main>
