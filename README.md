@@ -37,4 +37,4 @@ Open `http://localhost:3000` in your browser.
 - If Cura reports an empty STL, ensure the server completed the conversion and re-download.
 
 ## License
-Choose a license before publishing if you plan to distribute.
+GNU General Public License (GPL).
