@@ -13,7 +13,7 @@
         <p class="sub">Upload a MIDI file and download a printable record.</p>
 
         <form id="uploadForm">
-          <div class="file-row">
+          <div id="dropzone" class="file-row dropzone">
             <div class="file-wrap">
               <label class="file">
                 <input type="file" name="midi" accept=".mid,.midi" required />
@@ -33,6 +33,7 @@
         </form>
 
         <div id="status" class="status">Ready.</div>
+        <div id="summary" class="summary" aria-hidden="true"></div>
         <div id="progress" class="progress" aria-hidden="true">
           <div class="bar" style="width: 0%"></div>
           <div class="label">0%</div>

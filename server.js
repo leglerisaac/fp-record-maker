@@ -93,6 +93,9 @@ app.post("/api/convert", upload.fields([{ name: "midi", maxCount: 1 }, { name: "
       res.setHeader("X-Scale-Factor", msg.scale.toFixed(4));
       res.setHeader("X-Transpose-Semites", msg.transpose.toString());
       res.setHeader("X-Gap-Seconds", msg.gap.toFixed(3));
+      res.setHeader("X-Total-Notes", msg.totalNotes.toString());
+      res.setHeader("X-Out-Of-Range", msg.outOfRangePct.toString());
+      res.setHeader("X-Source-Duration", msg.sourceDuration.toString());
       updateProgress(100);
       res.send(buffer);
       if (jobId) jobs.delete(jobId);

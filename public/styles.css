@@ -56,6 +56,18 @@ form {
   flex-wrap: wrap;
 }
 
+.dropzone {
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px dashed rgba(0, 0, 0, 0.08);
+  background: #fff6ec;
+}
+
+.dropzone.dragover {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px rgba(212, 79, 42, 0.15);
+}
+
 .file-wrap {
   display: inline-flex;
 }
@@ -123,6 +135,20 @@ button {
 .status.error {
   background: #fde8e8;
   color: #8a1f1f;
+}
+
+.summary {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f3efe7;
+  color: #5a5148;
+  display: none;
+  font-size: 13px;
+}
+
+.summary.active {
+  display: block;
 }
 
 .progress {

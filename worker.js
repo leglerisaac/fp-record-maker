@@ -253,6 +253,18 @@ function buildNoteEvents(midi) {
   return notes;
 }
 
+function computeStats(rawNotes, transpose) {
+  if (!rawNotes.length) return { total: 0, outOfRange: 0, duration: 0 };
+  const duration = rawNotes.reduce((m, n) => Math.max(m, n.time + n.duration), 0);
+  let outOfRange = 0;
+  for (const n of rawNotes) {
+    const pitchClass = ((n.midi + transpose) % 12 + 12) % 12;
+    const hasSameClass = ALLOWED_MIDI.some((m) => m % 12 === pitchClass);
+    if (!hasSameClass) outOfRange += 1;
+  }
+  return { total: rawNotes.length, outOfRange, duration };
+}
+
 function createBlankDisc(includeBottomGrooves) {
   const g = GEOM;
   const stock = cylinder({ height: g.hStock, radius: g.rStock, segments: g.segments, center: [0, 0, g.hStock / 2] });
@@ -431,12 +443,16 @@ async function run() {
 
     postStage("send");
     postProgress(98);
+    const stats = computeStats(rawNotes, transpose);
     parentPort.postMessage({
       type: "result",
       buffer,
       scale,
       transpose,
-      gap
+      gap,
+      totalNotes: stats.total,
+      outOfRangePct: stats.total ? Math.round((stats.outOfRange / stats.total) * 100) : 0,
+      sourceDuration: Math.round(stats.duration)
     });
   } catch (err) {
     parentPort.postMessage({ type: "error", error: "Failed to convert MIDI." });

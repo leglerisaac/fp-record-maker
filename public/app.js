@@ -4,6 +4,8 @@ const fileLabel = document.getElementById("fileLabel");
 const fileLabelB = document.getElementById("fileLabelB");
 const clearA = document.getElementById("clearA");
 const clearB = document.getElementById("clearB");
+const dropzone = document.getElementById("dropzone");
+const summaryEl = document.getElementById("summary");
 const progressEl = document.getElementById("progress");
 const progressBar = progressEl.querySelector(".bar");
 const progressLabel = progressEl.querySelector(".label");
@@ -63,6 +65,16 @@ function stopActivityTicker() {
   activityTimer = null;
 }
 
+function setSummary(text) {
+  if (!text) {
+    summaryEl.classList.remove("active");
+    summaryEl.textContent = "";
+    return;
+  }
+  summaryEl.textContent = text;
+  summaryEl.classList.add("active");
+}
+
 const fileInputs = form.querySelectorAll("input[type=file]");
 function updateFileUI() {
   const fileA = fileInputs[0].files[0];
@@ -90,6 +102,34 @@ clearB.addEventListener("click", (e) => {
   updateFileUI();
 });
 
+["dragenter", "dragover"].forEach((evt) => {
+  dropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+});
+["dragleave", "drop"].forEach((evt) => {
+  dropzone.addEventListener(evt, (e) => {
+    e.preventDefault();
+    dropzone.classList.remove("dragover");
+  });
+});
+
+dropzone.addEventListener("drop", (e) => {
+  const files = Array.from(e.dataTransfer.files).filter((f) => /\.mid(i)?$/i.test(f.name));
+  if (!files.length) return;
+  const dtA = new DataTransfer();
+  dtA.items.add(files[0]);
+  fileInputs[0].files = dtA.files;
+
+  if (files[1]) {
+    const dtB = new DataTransfer();
+    dtB.items.add(files[1]);
+    fileInputs[1].files = dtB.files;
+  }
+  updateFileUI();
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
@@ -104,6 +144,7 @@ form.addEventListener("submit", async (e) => {
   progressEl.classList.add("active");
   activityEl.classList.add("active");
   stepsEl.classList.add("active");
+  setSummary("");
   setProgress(0);
   setStage("parse");
   startActivityTicker();
@@ -148,8 +189,14 @@ form.addEventListener("submit", async (e) => {
     const scale = res.headers.get("X-Scale-Factor") || "";
     const transpose = res.headers.get("X-Transpose-Semites") || "";
     const gap = res.headers.get("X-Gap-Seconds") || "";
+    const notes = res.headers.get("X-Total-Notes") || "";
+    const oob = res.headers.get("X-Out-Of-Range") || "";
+    const duration = res.headers.get("X-Source-Duration") || "";
     statusEl.textContent = `Done. Scale ${scale}, transpose ${transpose} semis, gap ${gap}s.`;
     statusEl.className = "status done";
+    if (notes) {
+      setSummary(`Summary: ${notes} notes, ${oob}% out-of-range, source duration ${duration}s.`);
+    }
     setProgress(100);
     progressEl.classList.remove("active");
     activityEl.classList.remove("active");
@@ -162,6 +209,7 @@ form.addEventListener("submit", async (e) => {
     progressEl.classList.remove("active");
     activityEl.classList.remove("active");
     stepsEl.classList.remove("active");
+    setSummary("");
     stopActivityTicker();
   }
 });
