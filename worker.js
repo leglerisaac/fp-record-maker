@@ -58,12 +58,12 @@ const GEOM = {
   hStockDouble: 4.75,
   rStock: 60.58,
   oDrive: 21.765,
-  rDrive: 1.565,
+  rDrive: 1.65,
   hInset: 1.5,
   rInset: 25.6,
   hGroove: 1.5,
   overlap: 0.2,
-  rCenter: 3.25,
+  rCenter: 3.35,
   segments: 160
 };
 
@@ -101,6 +101,8 @@ function buildCurvedLabel(text, side, hStock) {
 
   const fontHeight = 4.6;
   const strokeSize = 0.55;
+  const textDepth = 0.6;
+  const embed = 0.2;
   const arcRadius = Math.min(15.5, GEOM.rInset - 8.0);
 
   const glyphs = [];
@@ -114,7 +116,7 @@ function buildCurvedLabel(text, side, hStock) {
       .filter((line) => line.length >= 2)
       .map((line) => {
         const p = path2.fromPoints({}, line);
-        return extrudeRectangular({ height: 0.6, size: strokeSize }, p);
+        return extrudeRectangular({ height: textDepth, size: strokeSize }, p);
       });
     if (!strokes.length) {
       glyphs.push({ char: ch, width: fontHeight * 0.6, geom: null });
@@ -154,11 +156,11 @@ function buildCurvedLabel(text, side, hStock) {
   if (side === "B") {
     text3d = rotateZ(Math.PI, text3d);
     text3d = rotateX(Math.PI, text3d);
-    return translate([0, 0, 0], text3d);
+    return translate([0, 0, textDepth - embed], text3d);
   }
 
   text3d = rotateZ(Math.PI, text3d);
-  return translate([0, 0, hStock - 0.1], text3d);
+  return translate([0, 0, hStock - textDepth + embed], text3d);
 }
 function noteNameToMidi(name) {
   const match = /^([A-G]#?)(-?\d+)$/.exec(name);
@@ -419,15 +421,18 @@ async function run() {
 
     let mappedNotesB = [];
     if (rawNotesB.length) {
+      const durationB = rawNotesB.reduce((m, n) => Math.max(m, n.time + n.duration), 0);
+      const { scale: scaleB } = computeTimingScale(durationB);
+      const transposeB = computeBestTranspose(rawNotesB);
       const totalNotesB = rawNotesB.length;
       const stepB = Math.max(1, Math.floor(totalNotesB / 6));
       for (let i = 0; i < totalNotesB; i++) {
         const n = rawNotesB[i];
-        const scaledTime = n.time * scale;
+        const scaledTime = n.time * scaleB;
         if (scaledTime >= 0 && scaledTime <= target) {
-          const mapped = mapMidiToAllowed(n.midi + transpose);
+          const mapped = mapMidiToAllowed(n.midi + transposeB);
           const [inner, outer] = NOTE_PIN_KEY[mapped.idx];
-          const angleRad = (scaledTime / target) * Math.PI * 2;
+          const angleRad = -((scaledTime / target) * Math.PI * 2);
           mappedNotesB.push({ inner, outer, angleRad });
         }
         if (i % stepB === 0) {
